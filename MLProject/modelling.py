@@ -37,15 +37,37 @@ def load_env_file(env_path: Path) -> None:
                 os.environ[key] = value
 
 
-def get_dagshub_token() -> str:
-    token = os.getenv("DAGSHUB_USER_TOKEN") or os.getenv("DAGSHUB_TOKEN")
-    if token:
-        return token
+def get_dagshub_token() -> str | None:
+    return os.getenv("DAGSHUB_USER_TOKEN") or os.getenv("DAGSHUB_TOKEN")
 
-    token = input("Masukkan DagsHub Token Anda untuk menyimpan artefak online: ").strip()
+
+def configure_tracking() -> str:
+    local_uri = MLFLOW_URI
+    remote_uri = f"https://dagshub.com/{DAGSHUB_OWNER}/{DAGSHUB_REPO}.mlflow"
+
+    load_env_file(BASE_DIR / ".env")
+    token = get_dagshub_token()
     if not token:
-        raise ValueError("Token DagsHub tidak boleh kosong.")
-    return token
+        print("DAGSHUB_TOKEN not found; using local MLflow tracking.")
+        mlflow.set_tracking_uri(local_uri)
+        mlflow.set_experiment(EXPERIMENT_NAME)
+        return local_uri
+
+    os.environ["DAGSHUB_USER_TOKEN"] = token
+    os.environ["DAGSHUB_TOKEN"] = token
+
+    try:
+        dagshub.init(repo_owner=DAGSHUB_OWNER, repo_name=DAGSHUB_REPO, mlflow=True, dvc=False, patch_mlflow=True)
+        mlflow.set_tracking_uri(remote_uri)
+        mlflow.set_experiment(EXPERIMENT_NAME)
+        print(f"MLflow Tracking diset ke DagsHub: {remote_uri}")
+        return remote_uri
+    except Exception as exc:
+        print(f"Tidak bisa terhubung ke DagsHub: {exc}")
+        print(f"Menggunakan MLflow lokal: {local_uri}")
+        mlflow.set_tracking_uri(local_uri)
+        mlflow.set_experiment(EXPERIMENT_NAME)
+        return local_uri
 
 def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if "Id" in df.columns:
@@ -108,28 +130,6 @@ def prepare_data():
     for raw_file in raw_files:
         if raw_file.exists():
             os.remove(raw_file)
-
-def configure_tracking() -> str:
-    local_uri = MLFLOW_URI
-    remote_uri = f"https://dagshub.com/{DAGSHUB_OWNER}/{DAGSHUB_REPO}.mlflow"
-
-    load_env_file(BASE_DIR / ".env")
-    token = get_dagshub_token()
-    os.environ["DAGSHUB_USER_TOKEN"] = token
-    os.environ["DAGSHUB_TOKENwith mlflow.start_run"] = token
-
-    try:
-        dagshub.init(repo_owner=DAGSHUB_OWNER, repo_name=DAGSHUB_REPO, mlflow=True, dvc=False, patch_mlflow=True)
-        mlflow.set_tracking_uri(remote_uri)
-        mlflow.set_experiment(EXPERIMENT_NAME)
-        print(f"MLflow Tracking diset ke DagsHub: {remote_uri}")
-        return remote_uri
-    except Exception as exc:
-        print(f"Tidak bisa terhubung ke DagsHub: {exc}")
-        print(f"Menggunakan MLflow lokal: {local_uri}")
-        mlflow.set_tracking_uri(local_uri)
-        mlflow.set_experiment(EXPERIMENT_NAME)
-        return local_uri
 
 
 def save_feature_importance(model: RandomForestRegressor, feature_names: list[str], output_path: Path) -> tuple[Path, Path]:
