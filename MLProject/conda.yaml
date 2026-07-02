@@ -1,0 +1,11 @@
+name: house_price_env
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - pandas
+    - scikit-learn
+    - mlflow
+    - dagshub
