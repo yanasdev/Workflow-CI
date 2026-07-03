@@ -15,30 +15,40 @@ ARTIFACT_DIR = BASE_DIR / "artifacts"
 EXPERIMENT_NAME = "House_Price_Prediction"
 
 def configure_tracking():
-    remote_uri = f"https://dagshub.com/{os.getenv('DAGSHUB_USERNAME')}/{os.getenv('DAGSHUB_REPO')}.mlflow"
-    if os.getenv("DAGSHUB_USERNAME") and os.getenv("DAGSHUB_TOKEN"):
-        os.environ["MLFLOW_TRACKING_USERNAME"] = os.getenv("DAGSHUB_USERNAME")
-        os.environ["MLFLOW_TRACKING_PASSWORD"] = os.getenv("DAGSHUB_TOKEN")
+    dagshub_username = os.getenv("DAGSHUB_USERNAME")
+    dagshub_token = os.getenv("DAGSHUB_TOKEN")
+    
+    if dagshub_username and dagshub_token:
+        os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_username
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+        remote_uri = f"https://dagshub.com/{dagshub_username}/Eksperimen_MSML_Yana_Suryana.mlflow"
         mlflow.set_tracking_uri(remote_uri)
     else:
         mlflow.set_tracking_uri(f"file://{BASE_DIR / 'mlruns'}")
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    
+    try:
+        mlflow.set_experiment(EXPERIMENT_NAME)
+    except mlflow.exceptions.MlflowException:
+        mlflow.create_experiment(EXPERIMENT_NAME)
+        mlflow.set_experiment(EXPERIMENT_NAME)
 
-def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess_dataframe(df):
     if "Id" in df.columns:
         df = df.drop("Id", axis=1)
+    
     cat_cols = ['PoolQC', 'MiscFeature', 'Alley', 'Fence', 'FireplaceQu', 'GarageType', 'GarageFinish', 'GarageQual', 'GarageCond', 'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2']
     for col in cat_cols:
         if col in df.columns:
             df[col] = df[col].fillna('None')
-    if 'LotFrontage' in df.columns:
-        df['LotFrontage'] = df['LotFrontage'].fillna(df['LotFrontage'].median())
-    if 'MasVnrArea' in df.columns:
-        df['MasVnrArea'] = df['MasVnrArea'].fillna(0)
-    if 'GarageYrBlt' in df.columns:
-        df['GarageYrBlt'] = df['GarageYrBlt'].fillna(0)
+            
+    num_cols = {'LotFrontage': df['LotFrontage'].median(), 'MasVnrArea': 0, 'GarageYrBlt': 0}
+    for col, val in num_cols.items():
+        if col in df.columns:
+            df[col] = df[col].fillna(val)
+            
     if 'SalePrice' in df.columns:
         df['SalePrice'] = np.log1p(df['SalePrice'])
+        
     return pd.get_dummies(df)
 
 def prepare_data():
@@ -48,10 +58,13 @@ def prepare_data():
         api.authenticate()
         competition = "house-prices-advanced-regression-techniques"
         api.competition_download_files(competition, path=BASE_DIR)
+        
         with zipfile.ZipFile(BASE_DIR / f"{competition}.zip", "r") as zip_ref:
             zip_ref.extractall(BASE_DIR)
+            
         df = preprocess_dataframe(pd.read_csv(BASE_DIR / "train.csv"))
         df.to_csv(clean_csv, index=False)
+        
         for f in [BASE_DIR / "train.csv", BASE_DIR / "test.csv", BASE_DIR / "sample_submission.csv", BASE_DIR / f"{competition}.zip"]:
             if f.exists(): os.remove(f)
 
