@@ -68,23 +68,30 @@ def prepare_data():
         for f in [BASE_DIR / "train.csv", BASE_DIR / "test.csv", BASE_DIR / "sample_submission.csv", BASE_DIR / f"{competition}.zip"]:
             if f.exists(): os.remove(f)
 
-configure_tracking()
-prepare_data()
-ARTIFACT_DIR.mkdir(exist_ok=True)
+def run_training():
+    configure_tracking()
+    prepare_data()
+    ARTIFACT_DIR.mkdir(exist_ok=True)
 
-df = pd.read_csv(BASE_DIR / "house-price-dataset_preprocessing.csv")
-X, y = df.drop("SalePrice", axis=1), df["SalePrice"]
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    df = pd.read_csv(BASE_DIR / "house-price-dataset_preprocessing.csv")
+    X, y = df.drop("SalePrice", axis=1), df["SalePrice"]
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-with mlflow.start_run(run_name="baseline_random_forest") as run:
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    
-    preds = model.predict(X_test)
-    mlflow.log_params({"model_type": "RandomForestRegressor", "n_estimators": 100})
-    mlflow.log_metrics({"mse": mean_squared_error(y_test, preds), "r2": r2_score(y_test, preds)})
-    
-    pred_df = pd.DataFrame({"Actual": y_test, "Predicted": preds})
-    pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run.info.run_id}.csv", index=False)
-    
-    mlflow.sklearn.log_model(model, "model")
+    if mlflow.active_run():
+        mlflow.end_run()
+
+    with mlflow.start_run(run_name="baseline_random_forest") as run:
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+        
+        preds = model.predict(X_test)
+        mlflow.log_params({"model_type": "RandomForestRegressor", "n_estimators": 100})
+        mlflow.log_metrics({"mse": mean_squared_error(y_test, preds), "r2": r2_score(y_test, preds)})
+        
+        pred_df = pd.DataFrame({"Actual": y_test, "Predicted": preds})
+        pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run.info.run_id}.csv", index=False)
+        
+        mlflow.sklearn.log_model(model, "model")
+
+if __name__ == "__main__":
+    run_training()
