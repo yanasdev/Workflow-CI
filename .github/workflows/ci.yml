@@ -27,6 +27,12 @@ jobs:
         run: |
           python MLProject/modelling.py
 
+      - name: Upload MLflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml-model-artifacts
+          path: MLProject/artifacts/
+
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
         with:
