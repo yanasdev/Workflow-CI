@@ -85,6 +85,9 @@ df = pd.read_csv(BASE_DIR / "house-price-dataset_preprocessing.csv")
 X, y = df.drop("SalePrice", axis=1), df["SalePrice"]
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+if "MLFLOW_RUN_ID" in os.environ:
+    del os.environ["MLFLOW_RUN_ID"]
+    
 if mlflow.active_run(): mlflow.end_run()
 
 with mlflow.start_run(run_name="baseline_random_forest") as run:
