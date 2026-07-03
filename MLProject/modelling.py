@@ -77,10 +77,14 @@ def run_training():
     X, y = df.drop("SalePrice", axis=1), df["SalePrice"]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    if mlflow.active_run():
-        mlflow.end_run()
+    active_run = mlflow.active_run()
+    
+    if active_run:
+        run_context = mlflow.start_run(run_id=active_run.info.run_id, nested=True)
+    else:
+        run_context = mlflow.start_run(run_name="baseline_random_forest")
 
-    with mlflow.start_run(run_name="baseline_random_forest") as run:
+    with run_context as run:
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(X_train, y_train)
         
