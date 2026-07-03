@@ -77,25 +77,19 @@ def run_training():
     X, y = df.drop("SalePrice", axis=1), df["SalePrice"]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    active_run = mlflow.active_run()
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
     
-    if active_run:
-        run_context = mlflow.start_run(run_id=active_run.info.run_id, nested=True)
-    else:
-        run_context = mlflow.start_run(run_name="baseline_random_forest")
-
-    with run_context as run:
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        
-        preds = model.predict(X_test)
-        mlflow.log_params({"model_type": "RandomForestRegressor", "n_estimators": 100})
-        mlflow.log_metrics({"mse": mean_squared_error(y_test, preds), "r2": r2_score(y_test, preds)})
-        
-        pred_df = pd.DataFrame({"Actual": y_test, "Predicted": preds})
-        pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run.info.run_id}.csv", index=False)
-        
-        mlflow.sklearn.log_model(model, "model")
+    preds = model.predict(X_test)
+    
+    mlflow.log_params({"model_type": "RandomForestRegressor", "n_estimators": 100})
+    mlflow.log_metrics({"mse": mean_squared_error(y_test, preds), "r2": r2_score(y_test, preds)})
+    
+    run_id = mlflow.active_run().info.run_id if mlflow.active_run() else "local"
+    pred_df = pd.DataFrame({"Actual": y_test, "Predicted": preds})
+    pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run_id}.csv", index=False)
+    
+    mlflow.sklearn.log_model(model, "model")
 
 if __name__ == "__main__":
     run_training()
