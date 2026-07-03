@@ -8,9 +8,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Debug Structure
-        run: ls -R
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -21,16 +18,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run training
+      - name: Debug and Execute Training
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
           DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
         run: |
-          # Mencari lokasi file secara dinamis agar tidak error
-          FILE_PATH=$(find . -name "modelling_tuning.py" | head -n 1)
-          python "$FILE_PATH"
+          echo "Daftar file di workspace:"
+          ls -R
+          
+          TARGET_FILE=$(find . -type f -name "modelling_tuning.py" | head -n 1)
+          
+          if [ -z "$TARGET_FILE" ]; then
+            echo "Error: File modelling_tuning.py tidak ditemukan!"
+            exit 1
+          fi
+          
+          echo "Menjalankan file: $TARGET_FILE"
+          python "$TARGET_FILE"
 
       - name: Archive artifacts
         uses: actions/upload-artifact@v4
@@ -50,5 +56,6 @@ jobs:
         run: |
           LATEST_RUN_ID=$(ls artifacts/predictions_*.csv | head -n 1 | cut -d'_' -f2 | cut -d'.' -f1)
           IMAGE_TAG="$DOCKER_USERNAME/house-price-model:$LATEST_RUN_ID"
+          
           docker build -t "$IMAGE_TAG" .
           docker push "$IMAGE_TAG"
