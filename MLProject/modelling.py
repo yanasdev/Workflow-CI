@@ -237,7 +237,7 @@ with mlflow.start_run(run_name="baseline_random_forest") as run:
     mlflow.log_artifact(str(predictions_path))
     mlflow.log_artifact(str(config_path))
     mlflow.log_artifact(str(metadata_path))
-    mlflow.sklearn.log_model(model, "model_house_price")
+    mlflow.sklearn.log_model(model, "model")
 
     # Persist the run id so CI can locate the logged model for dockerization
     run_id_path = BASE_DIR / "last_run_id.txt"
