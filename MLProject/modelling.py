@@ -15,7 +15,9 @@ from sklearn.model_selection import train_test_split
 
 BASE_DIR = Path(__file__).resolve().parent
 EXPERIMENT_NAME = "House_Price_Prediction"
-MLFLOW_URI = "http://127.0.0.1:5000"
+# Prefer a file-backed mlruns directory inside the project for CI runs
+# to avoid connecting to an MLflow server that doesn't exist in the runner.
+MLFLOW_URI = f"file://{BASE_DIR / 'mlruns'}"
 DAGSHUB_OWNER = "yanas.dev"
 DAGSHUB_REPO = "Eksperimen_MSML_Yana_Suryana"
 
@@ -236,6 +238,11 @@ with mlflow.start_run(run_name="baseline_random_forest") as run:
     mlflow.log_artifact(str(config_path))
     mlflow.log_artifact(str(metadata_path))
     mlflow.sklearn.log_model(model, "model_house_price")
+
+    # Persist the run id so CI can locate the logged model for dockerization
+    run_id_path = BASE_DIR / "last_run_id.txt"
+    with run_id_path.open("w", encoding="utf-8") as f:
+        f.write(run.info.run_id)
 
     print(f"Model berhasil di-training. R2 Score: {r2}")
     print(f"Run ID: {run.info.run_id}")
