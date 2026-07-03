@@ -2,7 +2,6 @@ import json
 import os
 from pathlib import Path
 
-import dagshub
 import matplotlib.pyplot as plt
 import mlflow
 import mlflow.sklearn
@@ -15,9 +14,7 @@ from sklearn.model_selection import train_test_split
 
 BASE_DIR = Path(__file__).resolve().parent
 EXPERIMENT_NAME = "House_Price_Prediction"
-# Prefer a file-backed mlruns directory inside the project for CI runs
-# to avoid connecting to an MLflow server that doesn't exist in the runner.
-MLFLOW_URI = f"file://{BASE_DIR / 'mlruns'}"
+MLFLOW_LOCAL_URI = f"file://{BASE_DIR / 'mlruns'}"
 DAGSHUB_OWNER = "yanas.dev"
 DAGSHUB_REPO = "Eksperimen_MSML_Yana_Suryana"
 
@@ -39,40 +36,26 @@ def load_env_file(env_path: Path) -> None:
                 os.environ[key] = value
 
 
-def get_dagshub_token() -> str | None:
-    return os.getenv("DAGSHUB_USER_TOKEN") or os.getenv("DAGSHUB_TOKEN")
-
-
 def configure_tracking() -> str:
-    local_uri = MLFLOW_URI
-    remote_uri = f"https://dagshub.com/{DAGSHUB_OWNER}/{DAGSHUB_REPO}.mlflow"
-
     load_env_file(BASE_DIR / ".env")
-    token = get_dagshub_token()
-    if not token:
-        print("DAGSHUB_TOKEN not found; using local MLflow tracking.")
-        mlflow.set_tracking_uri(local_uri)
-        mlflow.set_experiment(EXPERIMENT_NAME)
-        return local_uri
 
-    os.environ["DAGSHUB_USER_TOKEN"] = token
-    os.environ["DAGSHUB_TOKEN"] = token
+    remote_uri = f"https://dagshub.com/{DAGSHUB_OWNER}/{DAGSHUB_REPO}.mlflow"
+    mlflow_tracking_username = os.getenv("DAGSHUB_USERNAME") or os.getenv("MLFLOW_TRACKING_USERNAME")
+    mlflow_tracking_password = os.getenv("DAGSHUB_TOKEN") or os.getenv("MLFLOW_TRACKING_PASSWORD")
 
-    try:
-        dagshub.init(repo_owner=DAGSHUB_OWNER, repo_name=DAGSHUB_REPO, mlflow=True, dvc=False, patch_mlflow=False)
-        
-        mlflow.set_tracking_uri(remote_uri)
+    if not mlflow_tracking_username or not mlflow_tracking_password:
+        print("DAGSHUB credentials not found; falling back to local MLflow tracking.")
+        mlflow.set_tracking_uri(MLFLOW_LOCAL_URI)
         mlflow.set_experiment(EXPERIMENT_NAME)
-        
-        print(f"MLflow Tracking diset ke DagsHub: {remote_uri}")
-        return remote_uri
+        return MLFLOW_LOCAL_URI
 
-    except Exception as exc:
-        print(f"Tidak bisa terhubung ke DagsHub: {exc}")
-        print(f"Menggunakan MLflow lokal: {local_uri}")
-        mlflow.set_tracking_uri(local_uri)
-        mlflow.set_experiment(EXPERIMENT_NAME)
-        return local_uri
+    os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_OWNER
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = os.getenv("DAGSHUB_TOKEN", "")
+
+    mlflow.set_tracking_uri(remote_uri)
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    print(f"MLflow Tracking diset ke DagsHub: {remote_uri}")
+    return remote_uri
 
 def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if "Id" in df.columns:
@@ -168,32 +151,41 @@ def save_metadata(metadata: dict, output_path: Path) -> None:
 load_env_file(BASE_DIR / ".env")
 tracking_uri = configure_tracking()
 
-csv_filename = "house-price-dataset_preprocessing.csv"
-csv_path = BASE_DIR / csv_filename
-if not csv_path.exists():
-    print(f"Dataset bersih tidak ditemukan di {csv_path}. Memulai proses pengunduhan dan pembersihan data...")
+possible_csv_files = [
+    BASE_DIR / "house-price-clean_preprocessing.csv",
+    BASE_DIR / "house-price-dataset_preprocessing.csv",
+]
+local_csv_path = next((path for path in possible_csv_files if path.exists()), None)
+
+if local_csv_path is None:
+    print("Dataset bersih tidak ditemukan; memulai proses pengunduhan dan pembersihan data...")
     prepare_data()
-else:
-    df_tmp = pd.read_csv(csv_path)
+    local_csv_path = next((path for path in possible_csv_files if path.exists()), None)
+
+if local_csv_path is None:
+    raise FileNotFoundError("Tidak dapat menemukan dataset lokal setelah persiapan data.")
+
+if local_csv_path.exists():
+    df_tmp = pd.read_csv(local_csv_path)
     if not df_tmp.select_dtypes(include=[object]).empty:
         print("Dataset sudah ada tetapi berisi fitur kategorikal. Memproses ulang data...")
         df_tmp = preprocess_dataframe(df_tmp)
-        df_tmp.to_csv(csv_path, index=False)
+        df_tmp.to_csv(local_csv_path, index=False)
     df = df_tmp
 
 if 'df' not in locals():
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(local_csv_path)
 
 X = df.drop("SalePrice", axis=1)
 y = df["SalePrice"]
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-mlflow.set_experiment(EXPERIMENT_NAME)
+# Ensure any active run is closed before starting a new run in CI.
+if mlflow.active_run() is not None:
+    mlflow.end_run()
 
-os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_OWNER
-os.environ["MLFLOW_TRACKING_PASSWORD"] = get_dagshub_token()
-
-mlflow.set_experiment(EXPERIMENT_NAME)
+if "MLFLOW_RUN_ID" in os.environ:
+    del os.environ["MLFLOW_RUN_ID"]
 
 with mlflow.start_run(run_name="baseline_random_forest") as run:
     n_estimators = 100
