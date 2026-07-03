@@ -31,10 +31,19 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Debug file locations
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Listing all files:"
+          find . -maxdepth 3 -not -path '*/.*'
+
       - name: Build Docker Image
         run: |
-          ls -l requirements.txt  # Debugging: cek apakah file terbaca
-          docker build -t ${{ env.IMAGE_NAME }} .
+          RUN_ID=$(cat MLProject/last_run_id.txt)
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/house-price-model:$RUN_ID"
+          
+          docker build -t "$IMAGE_NAME" -f Dockerfile .
 
       - name: Push Docker Image
         run: |
