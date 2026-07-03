@@ -59,11 +59,14 @@ def configure_tracking() -> str:
     os.environ["DAGSHUB_TOKEN"] = token
 
     try:
-        dagshub.init(repo_owner=DAGSHUB_OWNER, repo_name=DAGSHUB_REPO, mlflow=True, dvc=False, patch_mlflow=True)
+        dagshub.init(repo_owner=DAGSHUB_OWNER, repo_name=DAGSHUB_REPO, mlflow=True, dvc=False, patch_mlflow=False)
+        
         mlflow.set_tracking_uri(remote_uri)
         mlflow.set_experiment(EXPERIMENT_NAME)
+        
         print(f"MLflow Tracking diset ke DagsHub: {remote_uri}")
         return remote_uri
+
     except Exception as exc:
         print(f"Tidak bisa terhubung ke DagsHub: {exc}")
         print(f"Menggunakan MLflow lokal: {local_uri}")
@@ -184,6 +187,11 @@ if 'df' not in locals():
 X = df.drop("SalePrice", axis=1)
 y = df["SalePrice"]
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+mlflow.set_experiment(EXPERIMENT_NAME)
+
+os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_OWNER
+os.environ["MLFLOW_TRACKING_PASSWORD"] = get_dagshub_token()
 
 mlflow.set_experiment(EXPERIMENT_NAME)
 
