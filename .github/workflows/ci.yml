@@ -20,7 +20,8 @@ jobs:
         run: |
           mlflow run MLProject --env-manager=local
         env:
-          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_USER_TOKEN }}
+          DAGSHUB_USER_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+          MLFLOW_ALLOW_FILE_STORE: "true"
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
