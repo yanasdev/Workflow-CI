@@ -49,8 +49,8 @@ def configure_tracking() -> str:
         mlflow.set_experiment(EXPERIMENT_NAME)
         return MLFLOW_LOCAL_URI
 
-    os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_OWNER
-    os.environ["MLFLOW_TRACKING_PASSWORD"] = os.getenv("DAGSHUB_TOKEN", "")
+    os.environ["MLFLOW_TRACKING_USERNAME"] = mlflow_tracking_username
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = mlflow_tracking_password
 
     mlflow.set_tracking_uri(remote_uri)
     mlflow.set_experiment(EXPERIMENT_NAME)
