@@ -17,21 +17,20 @@ EXPERIMENT_NAME = "House_Price_Prediction"
 def configure_tracking():
     dagshub_username = os.getenv("DAGSHUB_USERNAME")
     dagshub_token = os.getenv("DAGSHUB_TOKEN")
-    
+   
     if dagshub_username and dagshub_token:
         os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_username
         os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
         remote_uri = f"https://dagshub.com/{dagshub_username}/Eksperimen_MSML_Yana_Suryana.mlflow"
         mlflow.set_tracking_uri(remote_uri)
+        print(f"Tracking URI set to DagsHub: {remote_uri}")
     else:
         mlflow.set_tracking_uri(f"file://{BASE_DIR / 'mlruns'}")
-    
-    try:
-        mlflow.set_experiment(EXPERIMENT_NAME)
-    except mlflow.exceptions.MlflowException:
-        mlflow.create_experiment(EXPERIMENT_NAME)
-        mlflow.set_experiment(EXPERIMENT_NAME)
+        print("Using local tracking")
 
+    if not mlflow.active_run():
+        mlflow.set_experiment(EXPERIMENT_NAME)
+        
 def preprocess_dataframe(df):
     if "Id" in df.columns:
         df = df.drop("Id", axis=1)
@@ -71,21 +70,35 @@ def prepare_data():
 def run_training():
     configure_tracking()
     prepare_data()
+    
     ARTIFACT_DIR.mkdir(exist_ok=True)
-
+    
     df = pd.read_csv(BASE_DIR / "house-price-dataset_preprocessing.csv")
     X, y = df.drop("SalePrice", axis=1), df["SalePrice"]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
+    
     model = RandomForestRegressor(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-    
     preds = model.predict(X_test)
-    
+
+    if mlflow.active_run() is None:
+        with mlflow.start_run():
+            _log_run(model, preds, y_test)
+    else:
+        _log_run(model, preds, y_test)
+
+
+def _log_run(model, preds, y_test):
+    """Helper untuk logging"""
     mlflow.log_params({"model_type": "RandomForestRegressor", "n_estimators": 100})
-    mlflow.log_metrics({"mse": mean_squared_error(y_test, preds), "r2": r2_score(y_test, preds)})
+    mlflow.log_metrics({
+        "mse": mean_squared_error(y_test, preds),
+        "r2": r2_score(y_test, preds)
+    })
     
-    run_id = mlflow.active_run().info.run_id if mlflow.active_run() else "local"
+    run_id = mlflow.active_run().info.run_id
+    print(f"Logging to run: {run_id}")
+    
     pred_df = pd.DataFrame({"Actual": y_test, "Predicted": preds})
     pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run_id}.csv", index=False)
     
