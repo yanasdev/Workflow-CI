@@ -83,17 +83,16 @@ def run_training():
 
     active_run = mlflow.active_run()
     
-    if active_run is None:
-        print("⚠️ No active run, starting new one...")
-        with mlflow.start_run():
-            _log_to_mlflow(model, preds, y_test)
-    else:
+    if active_run:
         print(f"Using active run from mlflow run: {active_run.info.run_id}")
         _log_to_mlflow(model, preds, y_test)
+    else:
+        print("⚠️ No active run detected, creating new run...")
+        with mlflow.start_run(experiment_id=mlflow.get_experiment_by_name(EXPERIMENT_NAME).experiment_id):
+            _log_to_mlflow(model, preds, y_test)
 
 
 def _log_to_mlflow(model, preds, y_test):
-    """Helper function untuk logging"""
     mlflow.log_params({
         "model_type": "RandomForestRegressor", 
         "n_estimators": 100,
@@ -101,15 +100,17 @@ def _log_to_mlflow(model, preds, y_test):
     })
     
     mlflow.log_metrics({
-        "mse": mean_squared_error(y_test, preds),
-        "r2": r2_score(y_test, preds)
+        "mse": float(mean_squared_error(y_test, preds)),
+        "r2": float(r2_score(y_test, preds))
     })
     
     run_id = mlflow.active_run().info.run_id
-    print(f"Logging artifacts for run: {run_id}")
+    print(f"Successfully logging to run: {run_id}")
     
-    pred_df = pd.DataFrame({"Actual": y_test.reset_index(drop=True), 
-                           "Predicted": preds})
+    pred_df = pd.DataFrame({
+        "Actual": y_test.reset_index(drop=True), 
+        "Predicted": preds
+    })
     pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run_id}.csv", index=False)
     
     mlflow.sklearn.log_model(model, "model")
@@ -127,13 +128,13 @@ def configure_tracking():
         print(f"Tracking URI set to DagsHub: {remote_uri}")
     else:
         mlflow.set_tracking_uri(f"file://{BASE_DIR / 'mlruns'}")
-        print("Using local mlruns tracking")
+        print("Using local tracking")
 
-    if not mlflow.active_run():
-        try:
-            mlflow.set_experiment(EXPERIMENT_NAME)
-        except Exception as e:
-            print(f"Warning setting experiment: {e}")
+    try:
+        mlflow.set_experiment(EXPERIMENT_NAME)
+        print(f"Experiment set: {EXPERIMENT_NAME}")
+    except Exception as e:
+        print(f"Warning on set_experiment: {e}")
 
 if __name__ == "__main__":
     run_training()
