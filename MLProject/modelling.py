@@ -1,134 +1,214 @@
 import os
 import zipfile
 from pathlib import Path
-import pandas as pd
-import numpy as np
+
 import mlflow
 import mlflow.sklearn
+import numpy as np
+import pandas as pd
+from kaggle.api.kaggle_api_extended import KaggleApi
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
-from kaggle.api.kaggle_api_extended import KaggleApi
 
 BASE_DIR = Path(__file__).resolve().parent
 ARTIFACT_DIR = BASE_DIR / "artifacts"
+DATASET_FILE = BASE_DIR / "house-price-dataset_preprocessing.csv"
+
 EXPERIMENT_NAME = "House_Price_Prediction"
 
-def configure_tracking():
-    dagshub_username = os.getenv("DAGSHUB_USERNAME")
-    dagshub_token = os.getenv("DAGSHUB_TOKEN")
-   
-    if dagshub_username and dagshub_token:
-        os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_username
-        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
-        remote_uri = f"https://dagshub.com/{dagshub_username}/Eksperimen_MSML_Yana_Suryana.mlflow"
-        mlflow.set_tracking_uri(remote_uri)
-        print(f"Tracking URI set to DagsHub: {remote_uri}")
+
+def configure_experiment():
+    if os.getenv("MLFLOW_TRACKING_URI"):
+        print(f"Tracking URI: {mlflow.get_tracking_uri()}")
     else:
-        mlflow.set_tracking_uri(f"file://{BASE_DIR / 'mlruns'}")
-        print("Using local tracking (mlruns)")
+        local_uri = f"file://{BASE_DIR / 'mlruns'}"
+        mlflow.set_tracking_uri(local_uri)
+        print(f"Tracking URI: {local_uri}")
 
-    try:
-        mlflow.set_experiment(EXPERIMENT_NAME)
-        print(f"Experiment set: {EXPERIMENT_NAME}")
-    except Exception as e:
-        print(f"Warning setting experiment: {e}")
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    print(f"Experiment: {EXPERIMENT_NAME}")
 
 
-def preprocess_dataframe(df):
+def preprocess_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     if "Id" in df.columns:
-        df = df.drop("Id", axis=1)
-   
-    cat_cols = ['PoolQC', 'MiscFeature', 'Alley', 'Fence', 'FireplaceQu', 
-                'GarageType', 'GarageFinish', 'GarageQual', 'GarageCond', 
-                'BsmtQual', 'BsmtCond', 'BsmtExposure', 'BsmtFinType1', 'BsmtFinType2']
-    for col in cat_cols:
-        if col in df.columns:
-            df[col] = df[col].fillna('None')
-           
+        df = df.drop(columns="Id")
 
-    num_cols = {'LotFrontage': df['LotFrontage'].median(), 
-                'MasVnrArea': 0, 
-                'GarageYrBlt': 0}
-    for col, val in num_cols.items():
-        if col in df.columns:
-            df[col] = df[col].fillna(val)
-           
-    if 'SalePrice' in df.columns:
-        df['SalePrice'] = np.log1p(df['SalePrice'])
-       
+    categorical_columns = [
+        "PoolQC",
+        "MiscFeature",
+        "Alley",
+        "Fence",
+        "FireplaceQu",
+        "GarageType",
+        "GarageFinish",
+        "GarageQual",
+        "GarageCond",
+        "BsmtQual",
+        "BsmtCond",
+        "BsmtExposure",
+        "BsmtFinType1",
+        "BsmtFinType2",
+    ]
+
+    for column in categorical_columns:
+        if column in df.columns:
+            df[column] = df[column].fillna("None")
+
+    numeric_fill_values = {
+        "LotFrontage": df["LotFrontage"].median(),
+        "MasVnrArea": 0,
+        "GarageYrBlt": 0,
+    }
+
+    for column, value in numeric_fill_values.items():
+        if column in df.columns:
+            df[column] = df[column].fillna(value)
+
+    if "SalePrice" in df.columns:
+        df["SalePrice"] = np.log1p(df["SalePrice"])
+
     return pd.get_dummies(df)
 
 def prepare_data():
-    clean_csv = BASE_DIR / "house-price-dataset_preprocessing.csv"
-    if not clean_csv.exists():
-        print("Downloading dataset from Kaggle...")
-        api = KaggleApi()
-        api.authenticate()
-        
-        competition = "house-prices-advanced-regression-techniques"
-        api.competition_download_files(competition, path=BASE_DIR)
-       
-        with zipfile.ZipFile(BASE_DIR / f"{competition}.zip", "r") as zip_ref:
-            zip_ref.extractall(BASE_DIR)
-           
-        df = preprocess_dataframe(pd.read_csv(BASE_DIR / "train.csv"))
-        df.to_csv(clean_csv, index=False)
-        print("Dataset preprocessed and saved.")
-       
-        for f in [BASE_DIR / "train.csv", BASE_DIR / "test.csv", 
-                  BASE_DIR / "sample_submission.csv", 
-                  BASE_DIR / f"{competition}.zip"]:
-            if f.exists():
-                os.remove(f)
-    else:
+    if DATASET_FILE.exists():
         print("Using cached preprocessed dataset.")
+        return
+
+    print("Downloading dataset from Kaggle...")
+
+    api = KaggleApi()
+    api.authenticate()
+
+    competition = "house-prices-advanced-regression-techniques"
+
+    api.competition_download_files(
+        competition,
+        path=BASE_DIR,
+    )
+
+    with zipfile.ZipFile(
+        BASE_DIR / f"{competition}.zip",
+        "r",
+    ) as archive:
+        archive.extractall(BASE_DIR)
+
+    dataframe = pd.read_csv(BASE_DIR / "train.csv")
+    dataframe = preprocess_dataframe(dataframe)
+
+    dataframe.to_csv(DATASET_FILE, index=False)
+
+    print("Dataset preprocessed and saved.")
+
+    temporary_files = [
+        BASE_DIR / "train.csv",
+        BASE_DIR / "test.csv",
+        BASE_DIR / "sample_submission.csv",
+        BASE_DIR / f"{competition}.zip",
+    ]
+
+    for file in temporary_files:
+        if file.exists():
+            file.unlink()
 
 
-def _log_to_mlflow(model, preds, y_test):
-    """Helper untuk logging ke MLflow"""
-    run_id = mlflow.active_run().info.run_id
+def train_model():
+    dataframe = pd.read_csv(DATASET_FILE)
+
+    X = dataframe.drop(columns="SalePrice")
+    y = dataframe["SalePrice"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+    )
+
+    print("Training RandomForestRegressor...")
+
+    model = RandomForestRegressor(
+        n_estimators=100,
+        random_state=42,
+    )
+
+    model.fit(X_train, y_train)
+
+    predictions = model.predict(X_test)
+
+    return (
+        model,
+        predictions,
+        y_test.reset_index(drop=True),
+    )
+
+def log_results(model, predictions, y_test):
+    active_run = mlflow.active_run()
+
+    if active_run is None:
+        raise RuntimeError("No active MLflow run found.")
+
+    run_id = active_run.info.run_id
+
     print(f"Logging artifacts for run: {run_id}")
-    
-    mlflow.log_params({
-        "model_type": "RandomForestRegressor",
-        "n_estimators": 100,
-        "random_state": 42
-    })
-    
-    mlflow.log_metrics({
-        "mse": float(mean_squared_error(y_test, preds)),
-        "r2": float(r2_score(y_test, preds))
-    })
-    
-    pred_df = pd.DataFrame({
-        "Actual": y_test.reset_index(drop=True),
-        "Predicted": preds
-    })
-    pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run_id}.csv", index=False)
 
-    mlflow.sklearn.log_model(model, "model")
-    print(f"Model and artifacts logged successfully for run {run_id}")
+    mlflow.log_params(
+        {
+            "model_type": "RandomForestRegressor",
+            "n_estimators": 100,
+            "random_state": 42,
+        }
+    )
+
+    mse = mean_squared_error(y_test, predictions)
+    r2 = r2_score(y_test, predictions)
+
+    mlflow.log_metrics(
+        {
+            "mse": float(mse),
+            "r2": float(r2),
+        }
+    )
+
+    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+    prediction_file = ARTIFACT_DIR / f"predictions_{run_id}.csv"
+
+    pd.DataFrame(
+        {
+            "Actual": y_test,
+            "Predicted": predictions,
+        }
+    ).to_csv(
+        prediction_file,
+        index=False,
+    )
+
+    mlflow.log_artifact(str(prediction_file))
+
+    mlflow.sklearn.log_model(
+        sk_model=model,
+        artifact_path="model",
+    )
+
+    print(f"Model logged successfully: {run_id}")
 
 def run_training():
-    configure_tracking()
+    configure_experiment()
+
     prepare_data()
-    
-    ARTIFACT_DIR.mkdir(exist_ok=True)
-    
-    df = pd.read_csv(BASE_DIR / "house-price-dataset_preprocessing.csv")
-    X, y = df.drop("SalePrice", axis=1), df["SalePrice"]
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
-    
-    print("Training RandomForestRegressor...")
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    preds = model.predict(X_test)
-    
-    with mlflow.start_run():
-        _log_to_mlflow(model, preds, y_test)
+
+    model, predictions, y_test = train_model()
+
+    active_run = mlflow.active_run()
+
+    if active_run is not None:
+        print(f"Using existing MLflow run: {active_run.info.run_id}")
+        log_results(model, predictions, y_test)
+    else:
+        print("Starting new MLflow run")
+        with mlflow.start_run():
+            log_results(model, predictions, y_test)
 
 
 if __name__ == "__main__":
