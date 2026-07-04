@@ -81,28 +81,59 @@ def run_training():
     model.fit(X_train, y_train)
     preds = model.predict(X_test)
 
-    if mlflow.active_run() is None:
+    active_run = mlflow.active_run()
+    
+    if active_run is None:
+        print("⚠️ No active run, starting new one...")
         with mlflow.start_run():
-            _log_run(model, preds, y_test)
+            _log_to_mlflow(model, preds, y_test)
     else:
-        _log_run(model, preds, y_test)
+        print(f"Using active run from mlflow run: {active_run.info.run_id}")
+        _log_to_mlflow(model, preds, y_test)
 
 
-def _log_run(model, preds, y_test):
-    """Helper untuk logging"""
-    mlflow.log_params({"model_type": "RandomForestRegressor", "n_estimators": 100})
+def _log_to_mlflow(model, preds, y_test):
+    """Helper function untuk logging"""
+    mlflow.log_params({
+        "model_type": "RandomForestRegressor", 
+        "n_estimators": 100,
+        "random_state": 42
+    })
+    
     mlflow.log_metrics({
         "mse": mean_squared_error(y_test, preds),
         "r2": r2_score(y_test, preds)
     })
     
     run_id = mlflow.active_run().info.run_id
-    print(f"Logging to run: {run_id}")
+    print(f"Logging artifacts for run: {run_id}")
     
-    pred_df = pd.DataFrame({"Actual": y_test, "Predicted": preds})
+    pred_df = pd.DataFrame({"Actual": y_test.reset_index(drop=True), 
+                           "Predicted": preds})
     pred_df.to_csv(ARTIFACT_DIR / f"predictions_{run_id}.csv", index=False)
     
     mlflow.sklearn.log_model(model, "model")
+
+
+def configure_tracking():
+    dagshub_username = os.getenv("DAGSHUB_USERNAME")
+    dagshub_token = os.getenv("DAGSHUB_TOKEN")
+   
+    if dagshub_username and dagshub_token:
+        os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_username
+        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
+        remote_uri = f"https://dagshub.com/{dagshub_username}/Eksperimen_MSML_Yana_Suryana.mlflow"
+        mlflow.set_tracking_uri(remote_uri)
+        print(f"Tracking URI set to DagsHub: {remote_uri}")
+    else:
+        mlflow.set_tracking_uri(f"file://{BASE_DIR / 'mlruns'}")
+        print("Using local mlruns tracking")
+
+    if not mlflow.active_run():
+        try:
+            mlflow.set_experiment(EXPERIMENT_NAME)
+        except Exception as e:
+            print(f"Warning setting experiment: {e}")
 
 if __name__ == "__main__":
     run_training()
