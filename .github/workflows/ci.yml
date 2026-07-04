@@ -5,8 +5,10 @@ on: [push]
 jobs:
   train-and-build:
     runs-on: ubuntu-latest
+
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v3
         with:
@@ -15,7 +17,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
@@ -26,8 +28,14 @@ jobs:
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+
           DAGSHUB_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
           DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+
+          MLFLOW_TRACKING_URI: https://dagshub.com/${{ secrets.DAGSHUB_USERNAME }}/Eksperimen_MSML_Yana_Suryana.mlflow
+          MLFLOW_TRACKING_USERNAME: ${{ secrets.DAGSHUB_USERNAME }}
+          MLFLOW_TRACKING_PASSWORD: ${{ secrets.DAGSHUB_TOKEN }}
+
         run: |
           mlflow run MLProject --env-manager=local
 
@@ -35,7 +43,9 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
           git add MLProject/artifacts/
+
           if ! git diff-index --quiet HEAD; then
             git commit -m "chore: auto-update model artifacts via CI"
             git push
@@ -58,7 +68,9 @@ jobs:
           DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
           LATEST_RUN_ID=$(ls MLProject/artifacts/predictions_*.csv 2>/dev/null | head -n 1 | cut -d'_' -f2 | cut -d'.' -f1)
+
           IMAGE_TAG="$DOCKER_USERNAME/house-price-model:${LATEST_RUN_ID:-latest}"
-          
+
           docker build -t "$IMAGE_TAG" .
           docker push "$IMAGE_TAG"
+          
